@@ -3,8 +3,9 @@
 http://www.conditionaldesign.org/workshops/encircling/
 
 */
-var scale = 5; // pixels per centimeter
+var scale = 7; // pixels per centimeter
 var initial_padding = 100; // pixels to avoid around border
+var stroke_width = 1;
 
 var get_radius = function(path) {
   return path.bounds.width / 2 + path.style.strokeWidth / 2;
@@ -22,7 +23,7 @@ var smalls = [];
 var bigs = [];
 
 var n_iterations = 0;
-var max_iterations = 3;
+var max_iterations = 10;
 var incomplete = function () {
   n_iterations += 1;
   if (n_iterations > max_iterations) {
@@ -47,7 +48,7 @@ var initial_turn = function (player) {
       )
     ),
     radius: radius,
-    strokeWidth: 2,
+    strokeWidth: stroke_width,
     strokeColor: player
   });
   small.data.encircled_by = [];
@@ -79,7 +80,7 @@ var encircle = function (small, player) {
   var big = new Path.Circle({
     center: center,
     radius: radius,
-    strokeWidth: 2,
+    strokeWidth: stroke_width,
     strokeColor: player,
   });
   small.data.encircled_by.push({
@@ -124,29 +125,6 @@ var can_enter = function (big, player) {
   }
 };
 
-var third_angle = function (a, b) {
-  var a_mod = a % (2 * Math.PI);
-  var b_mod = b % (2 * Math.PI);
-  var a_up = (a_mod + (2 * Math.PI / 3)) % (2 * Math.PI);
-  var a_down = (a_mod - (2 * Math.PI / 3)) % (2 * Math.PI);
-  var b_up = (b_mod + (2 * Math.PI / 3)) % (2 * Math.PI);
-  var b_down = (b_mod - (2 * Math.PI / 3)) % (2 * Math.PI);
-  console.log('HHHHHHHHHHHH', a_mod, b_mod, a_up, a_down, b_up, b_down);
-  var max_d = 0;
-  var c = null;
-  _.each(_.range(1000), function (i) {
-    var j = 2 * Math.PI * i / 1000;
-    var d = Math.abs(((a_mod - j) + Math.PI) % (2 * Math.PI) - Math.PI) + Math.abs(((b_mod - j) + Math.PI) % (2 * Math.PI) - Math.PI);
-    console.log(j, a_mod, b_mod, d);
-    if (d >= max_d) {
-      max_d = d;
-      c = j;
-    }
-  });
-  console.log("wha", a_mod, b_mod, c);
-  return c;
-}
-
 var enter = function (big, player) {
   console.log("enter", n_iterations, big.style.strokeColor.toCSS());
   var radius = small_radius();
@@ -154,11 +132,9 @@ var enter = function (big, player) {
   var min_translate = max_translate * 0.8;
   var translate = Math.random() * (max_translate - min_translate) + min_translate;
   var angle = Math.random() * 2 * Math.PI;
-  if (big.data.encircled.length === 1) {
-    angle = big.data.encircled[0].angle + 2 * Math.PI / 3;
-    console.log("angle", big.data.encircled[0].angle, angle);
-  } else if (big.data.encircled.length === 2) {
-    angle = big.data.encircled[1].angle + 2 * Math.PI / 3;
+  var bde = big.data.encircled;
+  if (bde.length > 0) {
+    angle = bde[bde.length - 1].angle + 2 * Math.PI / 3;
   };
   var center = new Point(
     big.position.x + translate * Math.cos(angle),
@@ -167,7 +143,7 @@ var enter = function (big, player) {
   var small = new Path.Circle({
     center: center,
     radius: radius,
-    strokeWidth: 2,
+    strokeWidth: stroke_width,
     strokeColor: player,
   });
   small.data.encircled_by = [{
