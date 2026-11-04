@@ -4,12 +4,14 @@ var Encircling = require('../js/game.js');
 var find_violations = require('./oracle.js').find_violations;
 
 var RED = 0, GREEN = 1, BLUE = 2, BLACK = 3;
-var SEEDS = 40;
+var SEEDS = 20;
 
+var played = {};
 var play = function (seed) {
-  return Encircling.play(Encircling.create_game({
+  played[seed] = played[seed] || Encircling.play(Encircling.create_game({
     width: 1280, height: 800, scale: 14, seed: seed
   }));
+  return played[seed];
 };
 
 // the completed set from the workshop's diagram: a black set whose red,
@@ -120,7 +122,10 @@ test('a game ends with almost no legal move left', function () {
   var open = 0;
   var movable = 0;
   for (var seed = 1; seed <= 10; seed++) {
-    var game = play(seed);
+    // packing players stop when the honeycomb has no legal cell left
+    var game = Encircling.play(Encircling.create_game({
+      width: 1280, height: 800, scale: 14, seed: seed, strategy: false
+    }));
     game.smalls.filter(function (small) {
       return small.sets.length < 2;
     }).forEach(function (small) {

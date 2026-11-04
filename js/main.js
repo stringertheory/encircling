@@ -2,10 +2,12 @@
 
 http://www.conditionaldesign.org/workshops/encircling/
 
-Add ?seed=123 to the URL to reproduce a drawing.
+Add ?seed=123 to the URL to reproduce a drawing, or ?still to skip the
+animation.
 */
 var scale = 14; // pixels per centimeter
 var stroke_width = 1;
+var seconds_per_step = 0.08;
 
 // set up player colors
 var players = [
@@ -17,6 +19,7 @@ var players = [
 
 var seed_in_url = /[?&]seed=(\d+)/.exec(window.location.search);
 var seed = seed_in_url ? Number(seed_in_url[1]) : Date.now();
+var still = /[?&]still\b/.test(window.location.search);
 
 var game = Encircling.create_game({
   width: view.bounds.width,
@@ -27,6 +30,10 @@ var game = Encircling.create_game({
 });
 Encircling.play(game);
 console.log('seed', seed, 'turns', game.turns.length);
+
+// fills go underneath, so they never cover a line
+var fills = project.activeLayer;
+var lines = new Layer();
 
 var draw_circle = function (circle) {
   return new Path.Circle({
@@ -39,6 +46,7 @@ var draw_circle = function (circle) {
 
 // a completed set is colored in, except where other sets intersect it
 var fill_completed = function (big) {
+  fills.activate();
   var area = draw_circle(big);
   _.each(Encircling.neighbors_of(big), function (neighbor) {
     var cutter = draw_circle(neighbor);
@@ -49,11 +57,29 @@ var fill_completed = function (big) {
   });
   area.strokeColor = null;
   area.fillColor = players[big.completed_by];
+  lines.activate();
 };
 
-_.each(_.filter(game.bigs, function (big) {
-  return big.completed_by !== null;
-}), fill_completed);
+var draw_step = function (step) {
+  if (step.fill) {
+    fill_completed(step.fill);
+  } else {
+    draw_circle(step.circle);
+  }
+};
 
-_.each(game.bigs, draw_circle);
-_.each(game.smalls, draw_circle);
+var steps = Encircling.timeline(game);
+var next_step = 0;
+
+if (still) {
+  _.each(steps, draw_step);
+  next_step = steps.length;
+}
+
+function onFrame(event) {
+  var due = Math.floor(event.time / seconds_per_step);
+  while (next_step < steps.length && next_step <= due) {
+    draw_step(steps[next_step]);
+    next_step += 1;
+  }
+}

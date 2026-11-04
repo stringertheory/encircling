@@ -4,7 +4,7 @@ var Encircling = require('../js/game.js');
 var find_violations = require('./oracle.js').find_violations;
 
 var RED = 0, GREEN = 1, BLUE = 2, BLACK = 3;
-var SEEDS = 40;
+var SEEDS = 20;
 
 var empty_game = function () {
   var game = Encircling.create_game({

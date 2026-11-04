@@ -26,17 +26,18 @@ recorded membership and the drawing cannot disagree.
   // what players value in a move, see score_move
   var WEIGHTS = {
     completion: 100,
-    joined_completion: 200,
     connection: 10,
-    beside_completed: 20,
-    shared_member: 4,
     enclosed: 1,
-    member_beside_completed: 2
+    centered: 0.05
   };
-  var ANGLE_JITTER = 0.1; // radians of wobble in hand-placed circles
-  var SIZE_JITTER = 0.05; // fraction of wobble in hand-sized circles
-  var MEMBER_REACH = [0.6, 0.68]; // of a set's radius, center to member
   var PREFERRED_DIAMETER = [6.6, 7.8]; // centimeters, for packing sets tightly
+  var START_SPREAD = 0.1; // of the paper, how far from its center play starts
+  var MAX_TURNS = 80; // packing players stop here, leaving the outskirts bare
+  var SITE_SPACING = 4.7; // centimeters between neighboring cells
+  var SITES_TRIED = 3; // nearest cells considered around a small circle
+  var SITE_ATTEMPTS = 3; // sizes and wobbles tried on each cell
+  var SITE_WOBBLE = 1.5; // pixels off the grid, as if drawn by hand
+  var MEMBER_DIAMETER = [1, 1.55]; // centimeters, members must fit in overlaps
 
   // small seeded generator, so a drawing can be reproduced from its seed
   var create_rng = function (seed) {
@@ -267,14 +268,22 @@ recorded membership and the drawing cannot disagree.
   };
 
   // a small circle somewhere outside the sets
-  var draw_free_small = function (game, color, padding) {
+  var draw_free_small = function (game, color, x_padding, y_padding) {
     for (var i = 0; i < FREE_ATTEMPTS; i++) {
       var small = {
-        x: between(game, padding, game.width - padding),
-        y: between(game, padding, game.height - padding),
+        x: between(game, x_padding, game.width - x_padding),
+        y: between(game, y_padding, game.height - y_padding),
         r: small_radius(game),
         color: color
       };
+      if (packs(game)) {
+        // on an edge, where a free circle cannot block a cell
+        var edges = edges_of(game, sites_near(game, small)[0]);
+        var edge = edges[Math.floor(game.rng() * edges.length)];
+        small.x = edge.x;
+        small.y = edge.y;
+        small.r = member_radius(game);
+      }
       var containing = check_small(game, small);
       if (containing && containing.length === 0) {
         return add_small(game, small, []);
@@ -287,7 +296,7 @@ recorded membership and the drawing cannot disagree.
   // that the two sets overlap around the small. Wide proposals drop that
   // preference, to find the awkward spots that are still legal.
   var propose_big = function (game, small, color, wide) {
-    var r = packs(game) && !wide ? preferred_radius(game) : big_radius(game);
+    var r = big_radius(game);
     var angle = between(game, 0, 2 * Math.PI);
     if (small.sets.length > 0 && !wide) {
       var set = small.sets[0];
@@ -295,9 +304,6 @@ recorded membership and the drawing cannot disagree.
         between(game, -0.6, 0.6);
     }
     var offset = (wide ? game.rng() : between(game, 0.5, 0.9)) * (r - small.r);
-    if (packs(game) && !wide) {
-      offset = between(game, MEMBER_REACH[0], MEMBER_REACH[1]) * r;
-    }
     return {
       x: small.x + offset * Math.cos(angle),
       y: small.y + offset * Math.sin(angle),
@@ -331,10 +337,6 @@ recorded membership and the drawing cannot disagree.
     return big.completed_by !== null;
   };
 
-  var count_completed_neighbors = function (big) {
-    return neighbors_of(big).filter(is_completed).length;
-  };
-
   // groups of completed sets connected to each other, largest first
   var completed_groups = function (game) {
     var seen = [];
@@ -365,22 +367,15 @@ recorded membership and the drawing cannot disagree.
 
   // The goal is to connect as many completed sets as possible, so moves
   // are worth more the closer they bring sets to a connected whole.
-  var score_move = function (enclosed) {
-    var score = WEIGHTS.enclosed * enclosed.length;
+  var score_move = function (game, big, enclosed) {
+    var center = {x: game.width / 2, y: game.height / 2};
+    var score = WEIGHTS.enclosed * enclosed.length -
+      WEIGHTS.centered * distance(big, center) / game.scale;
     enclosed.forEach(function (small) {
       if (small.sets.length === 0) {
         return;
       }
-      var set = small.sets[0];
-      var beside = count_completed_neighbors(set);
-      var shared = set.members.filter(function (member) {
-        return member.sets.length === MAX_SETS_PER_SMALL;
-      }).length;
-      score += WEIGHTS.connection + WEIGHTS.beside_completed * beside +
-        WEIGHTS.shared_member * shared;
-      if (count_completions([small]) > 0 && beside > 0) {
-        score += WEIGHTS.joined_completion;
-      }
+      score += WEIGHTS.connection;
     });
     return score + WEIGHTS.completion * count_completions(enclosed);
   };
@@ -405,41 +400,89 @@ recorded membership and the drawing cannot disagree.
     var consider = function (big) {
       var enclosed = check_big(game, big);
       if (enclosed) {
-        var score = score_move(enclosed);
+        var score = score_move(game, big, enclosed);
         if (!best || score > best.score) {
           best = {big: big, enclosed: enclosed, score: score};
         }
       }
     };
     targets.forEach(function (small) {
-      for (var i = 0; i < ATTEMPTS; i++) {
-        if (packs(game) && small.sets.length > 0) {
-          consider(propose_neighbor(game, small, color));
-        } else {
-          consider(propose_big(game, small, color, false));
+      sites_around(game, small).forEach(function (site) {
+        for (var j = 0; j < SITE_ATTEMPTS; j++) {
+          consider(propose_site(game, site, color));
         }
-      }
+      });
     });
     return best;
   };
 
-  // the set mirrored across a member, the next cell of the honeycomb
-  var propose_neighbor = function (game, small, color) {
-    var set = small.sets[0];
-    var angle = Math.atan2(small.y - set.y, small.x - set.x) +
-      between(game, -ANGLE_JITTER, ANGLE_JITTER);
-    var r = set.r * between(game, 1 - SIZE_JITTER, 1 + SIZE_JITTER);
-    r = Math.min(5 * game.scale, Math.max(2.5 * game.scale, r));
-    // a member near its set's line would otherwise end up outside
-    var gap = Math.min(
-      distance(small, set) * between(game, 1 - SIZE_JITTER, 1 + SIZE_JITTER),
-      r - small.r - 2 * CLEARANCE
-    );
+  // Cells of the honeycomb come in two kinds, pointing opposite ways, so
+  // a cell's three edges are 120 degrees apart.
+  var edge_angles = function (game, site) {
+    var first = game.grid.angle + (site.up ? Math.PI / 2 : -Math.PI / 2);
+    return [0, 1, 2].map(function (i) {
+      return first + i * 2 * Math.PI / 3;
+    });
+  };
+
+  // the points midway between a cell and its neighbors, where members go
+  var edges_of = function (game, site) {
+    var half = game.grid.spacing / 2;
+    return edge_angles(game, site).map(function (angle) {
+      return {
+        x: site.x + half * Math.cos(angle),
+        y: site.y + half * Math.sin(angle)
+      };
+    });
+  };
+
+  // the cells nearest to a point, nearest first
+  var sites_near = function (game, point) {
+    var d = game.grid.spacing;
+    var cos = Math.cos(game.grid.angle);
+    var sin = Math.sin(game.grid.angle);
+    var dx = point.x - game.width / 2;
+    var dy = point.y - game.height / 2;
+    var local_x = dx * cos + dy * sin;
+    var local_y = dy * cos - dx * sin;
+    var row = Math.round(local_y / (1.5 * d));
+    var column = Math.round((local_x - row * Math.sqrt(3) * d / 2) /
+                            (Math.sqrt(3) * d));
+    var sites = [];
+    for (var i = column - 2; i <= column + 2; i++) {
+      for (var j = row - 2; j <= row + 2; j++) {
+        [false, true].forEach(function (shifted) {
+          var x = i * Math.sqrt(3) * d + j * Math.sqrt(3) * d / 2;
+          var y = j * 1.5 * d + (shifted ? d : 0);
+          sites.push({
+            x: game.width / 2 + x * cos - y * sin,
+            y: game.height / 2 + x * sin + y * cos,
+            up: !shifted
+          });
+        });
+      }
+    }
+    return sites.sort(function (a, b) {
+      return distance(a, point) - distance(b, point);
+    });
+  };
+
+  // the cells close enough to hold this small circle, which never change
+  var sites_around = function (game, small) {
+    if (!small.sites) {
+      small.sites = sites_near(game, small).slice(0, SITES_TRIED);
+    }
+    return small.sites;
+  };
+
+  // a big circle on this cell of the honeycomb
+  var propose_site = function (game, site, color) {
     return {
-      x: small.x + gap * Math.cos(angle),
-      y: small.y + gap * Math.sin(angle),
-      r: r,
-      color: color
+      x: site.x + between(game, -SITE_WOBBLE, SITE_WOBBLE),
+      y: site.y + between(game, -SITE_WOBBLE, SITE_WOBBLE),
+      r: preferred_radius(game),
+      color: color,
+      site: site
     };
   };
 
@@ -450,25 +493,44 @@ recorded membership and the drawing cannot disagree.
     }));
     var move = game.strategy ? find_best(game, color, targets) :
       find_single(game, color, targets, ATTEMPTS, false);
-    move = move || find_single(game, color, targets, WIDE_ATTEMPTS, true);
+    if (!move && !packs(game)) {
+      move = find_single(game, color, targets, WIDE_ATTEMPTS, true);
+    }
     return move ? add_big(game, move.big, move.enclosed) : null;
+  };
+
+  var member_radius = function (game) {
+    return between(game, MEMBER_DIAMETER[0], MEMBER_DIAMETER[1]) *
+      game.scale / 2;
+  };
+
+  // a member on one of the set's edges, which check_small rejects if the
+  // edge is taken
+  var propose_edge_member = function (game, big, color) {
+    var edges = edges_of(game, big.site);
+    var edge = edges[Math.floor(game.rng() * edges.length)];
+    return {
+      x: edge.x + between(game, -SITE_WOBBLE, SITE_WOBBLE),
+      y: edge.y + between(game, -SITE_WOBBLE, SITE_WOBBLE),
+      r: member_radius(game),
+      color: color
+    };
   };
 
   // Members spread evenly around the set, near its line, where another
   // set can reach them.
   var propose_member = function (game, big, color) {
+    if (packs(game)) {
+      return propose_edge_member(game, big, color);
+    }
     var r = small_radius(game);
-    var wobble = packs(game) ? ANGLE_JITTER : 0.5;
     var angle = between(game, 0, 2 * Math.PI);
     if (big.members.length > 0) {
       var last = big.members[big.members.length - 1];
       angle = Math.atan2(last.y - big.y, last.x - big.x) + 2 * Math.PI / 3 +
-        between(game, -wobble, wobble);
+        between(game, -0.5, 0.5);
     }
     var offset = between(game, 0.55, 0.9) * (big.r - r);
-    if (packs(game)) {
-      offset = between(game, MEMBER_REACH[0], MEMBER_REACH[1]) * big.r;
-    }
     return {
       x: big.x + offset * Math.cos(angle),
       y: big.y + offset * Math.sin(angle),
@@ -482,13 +544,9 @@ recorded membership and the drawing cannot disagree.
       return can_join(big, color);
     }));
     if (game.strategy) {
-      // fill the sets that are closest to joining what is complete
-      var value = function (big) {
-        return big.members.length +
-          WEIGHTS.member_beside_completed * count_completed_neighbors(big);
-      };
+      // fill the sets that are closest to being complete
       sets.sort(function (a, b) {
-        return value(b) - value(a);
+        return b.members.length - a.members.length;
       });
     }
     for (var i = 0; i < sets.length; i++) {
@@ -572,7 +630,7 @@ recorded membership and the drawing cannot disagree.
       turn.bonus_members = turn.bonus_members.concat(
         draw_members(game, color, BONUS_MEMBERS)
       );
-      var free = draw_free_small(game, color, FREE_PADDING);
+      var free = draw_free_small(game, color, FREE_PADDING, FREE_PADDING);
       if (free) {
         turn.bonus_free.push(free);
       }
@@ -589,12 +647,25 @@ recorded membership and the drawing cannot disagree.
       players: options.players || 4,
       strategy: options.strategy !== false, // false: players move at random
       rng: create_rng(options.seed),
+      grid: {
+        spacing: SITE_SPACING * options.scale,
+        angle: 0
+      },
       smalls: [],
       bigs: [],
       turns: []
     };
+    game.grid.angle = between(game, 0, Math.PI / 3);
+    game.initial = [];
     for (var color = 0; color < game.players; color++) {
-      draw_free_small(game, color, INITIAL_PADDING);
+      var x_padding = packs(game) ? game.width * (0.5 - START_SPREAD) :
+        INITIAL_PADDING;
+      var y_padding = packs(game) ? game.height * (0.5 - START_SPREAD) :
+        INITIAL_PADDING;
+      var start = draw_free_small(game, color, x_padding, y_padding);
+      if (start) {
+        game.initial.push(start);
+      }
     }
     return game;
   };
@@ -604,7 +675,8 @@ recorded membership and the drawing cannot disagree.
   var play = function (game) {
     var passes = 0;
     var color = 0;
-    while (passes < game.players) {
+    while (passes < game.players &&
+           !(packs(game) && game.turns.length >= MAX_TURNS)) {
       var turn = take_turn(game, color);
       if (turn) {
         game.turns.push(turn);
@@ -617,8 +689,29 @@ recorded membership and the drawing cannot disagree.
     return game;
   };
 
+  // Everything drawn, in the order it was drawn: circles, and fills for
+  // the sets that were completed.
+  var timeline = function (game) {
+    var steps = [];
+    var draw = function (circle) {
+      steps.push({circle: circle});
+    };
+    game.initial.forEach(draw);
+    game.turns.forEach(function (turn) {
+      draw(turn.big);
+      turn.members.forEach(draw);
+      turn.completed.forEach(function (big) {
+        steps.push({fill: big});
+      });
+      turn.bonus_members.forEach(draw);
+      turn.bonus_free.forEach(draw);
+    });
+    return steps;
+  };
+
   var api = {
     CLEARANCE: CLEARANCE,
+    MAX_TURNS: MAX_TURNS,
     check_big: check_big,
     check_small: check_small,
     add_big: add_big,
@@ -627,7 +720,10 @@ recorded membership and the drawing cannot disagree.
     neighbors_of: neighbors_of,
     mark_completed: mark_completed,
     completed_groups: completed_groups,
+    sites_near: sites_near,
+    edges_of: edges_of,
     create_game: create_game,
+    timeline: timeline,
     take_turn: take_turn,
     play: play
   };
