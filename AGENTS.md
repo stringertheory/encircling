@@ -13,7 +13,7 @@ build step or package manager.
 
 ```sh
 python3 -m http.server 8000                       # then open http://localhost:8000
-node --test test/*.test.js                        # all tests, about 20 seconds
+node --test test/*.test.js                        # all tests, about 30 seconds
 node --test --test-name-pattern="diagram" test/*.test.js   # tests matching a name
 ```
 
@@ -34,6 +34,11 @@ with no Paper.js dependency, exposed as `window.Encircling` in the browser and t
 everything in drawing order and `main.js` draws one step at a time. Nothing is redrawn on
 resize.
 
+**The page calls `play_drawing`, not `play`.** About 7% of games box themselves in before a
+core forms: nothing legal is left, not just unfound, and only completing sets brings new free
+circles. `play_drawing` then starts again from the next seed, so a seed still reproduces its
+drawing. Tests and measurements use `play`, which shows these stalls.
+
 **Each `take_turn` follows the workshop's order:** draw one big circle, draw one new member
 per small circle enclosed, then, for each set completed, draw two more members and one free
 small circle outside the sets.
@@ -49,7 +54,10 @@ Each set has three neighbors, so connected completed sets form a honeycomb, and 
 close if every set is on the same grid. Sets go on cells (`sites_near`, `propose_site`) with a
 slight wobble, and members and free circles go on edges (`edges_of`). Adjacent sets that do
 not share a member are illegal, so an off-grid or badly placed circle can block a cell for
-good. Play starts near the center and stops at `MAX_TURNS`, which leaves one core with free
+good. So the drawing does not look mechanical, `warped` bends the whole grid smoothly, which
+keeps neighbors aligned. The room for this is small: a set must reach its members but stay
+clear of the sets two cells away, and group size collapses above a `GRID_WARP` of about 0.4,
+even with radii fitted to each cell. Play starts near the center and stops at `MAX_TURNS`, which leaves one core with free
 circles scattered around it, as in the workshop's photo.
 
 `completed_groups` measures the workshop's goal: the largest group of connected completed
@@ -90,7 +98,6 @@ Choices the rules do not cover:
 
 ## Known gaps
 
-- About 2% of games stall early with under 15 sets.
 - jQuery is loaded but not used.
 - Colors differ from the workshop's red, green, blue, and black: orange replaces red, and
   black is dark gray.

@@ -64,9 +64,7 @@ var grid_scene = function (seed) {
     return Encircling.edges_of(game, site);
   };
   game.across = function (site, edge) {
-    return {
-      x: 2 * edge.x - site.x, y: 2 * edge.y - site.y, up: !site.up
-    };
+    return game.site(2 * edge.x - site.x, 2 * edge.y - site.y);
   };
   game.on_edge = function (edge, color) {
     return game.small(edge.x, edge.y, color);
@@ -268,6 +266,101 @@ test('play stops early, leaving free circles on the paper', function () {
     }).length;
   }
   assert.ok(free / SEEDS > 15, free / SEEDS + ' free circles per game');
+});
+
+test('neighboring cells share their edge however the grid bends', function () {
+  for (var seed = 1; seed <= 20; seed++) {
+    var game = grid_scene(seed);
+    var site = game.site(400, 400);
+    game.edges(site).forEach(function (edge) {
+      var shared = game.edges(game.across(site, edge)).filter(function (other) {
+        return Math.hypot(other.x - edge.x, other.y - edge.y) < 0.001;
+      });
+      assert.equal(shared.length, 1, 'seed ' + seed);
+    });
+  }
+});
+
+test('edges bend with the grid, staying between their cells', function () {
+  var total_gap = 0;
+  var count = 0;
+  for (var seed = 1; seed <= 20; seed++) {
+    var game = grid_scene(seed);
+    for (var x = 200; x <= 600; x += 100) {
+      var site = game.site(x, x);
+      game.edges(site).forEach(function (edge) {
+        var next = game.across(site, edge);
+        total_gap += Math.hypot(
+          edge.x - (site.x + next.x) / 2, edge.y - (site.y + next.y) / 2
+        );
+        count++;
+      });
+    }
+  }
+  assert.ok(total_gap / count < 1.8, 'mean gap ' + total_gap / count);
+});
+
+test('the grid bends, but not enough to pull cells apart', function () {
+  var spacings = [];
+  for (var seed = 1; seed <= 20; seed++) {
+    var game = grid_scene(seed);
+    for (var x = 200; x <= 600; x += 100) {
+      var site = game.site(x, x);
+      game.edges(site).forEach(function (edge) {
+        var next = game.across(site, edge);
+        spacings.push(Math.hypot(next.x - site.x, next.y - site.y));
+      });
+    }
+  }
+  var flat = 4.7 * 14;
+  assert.ok(Math.min.apply(null, spacings) < flat * 0.9);
+  assert.ok(Math.max.apply(null, spacings) > flat * 1.1);
+  assert.ok(Math.min.apply(null, spacings) > flat * 0.7);
+  assert.ok(Math.max.apply(null, spacings) < flat * 1.3);
+});
+
+test('connected sets are unevenly spaced, as if drawn by hand', function () {
+  var unevenness = total(true, function (game) {
+    var gaps = [];
+    game.bigs.forEach(function (big) {
+      Encircling.neighbors_of(big).forEach(function (other) {
+        gaps.push(Math.hypot(big.x - other.x, big.y - other.y));
+      });
+    });
+    var mean = gaps.reduce(function (a, b) { return a + b; }, 0) / gaps.length;
+    var spread = gaps.reduce(function (sum, gap) {
+      return sum + (gap - mean) * (gap - mean);
+    }, 0) / gaps.length;
+    return Math.sqrt(spread) / mean;
+  }) / SEEDS;
+  assert.ok(unevenness > 0.06, 'unevenness ' + unevenness);
+});
+
+test('sets vary in size', function () {
+  var sizes = play(1, true).bigs.map(function (big) {
+    return 2 * big.r / 14;
+  });
+  var range = Math.max.apply(null, sizes) - Math.min.apply(null, sizes);
+  assert.ok(range > 1.2, 'range ' + range);
+});
+
+test('a drawing starts a fresh sheet if the players box themselves in', function () {
+  [22, 23, 117, 120].forEach(function (seed) {
+    assert.ok(completed_sets(play(seed, true)) < 15, 'seed ' + seed + ' stalls');
+    var options = {width: 1280, height: 800, scale: 14, seed: seed};
+    var game = Encircling.play_drawing(options);
+    assert.ok(completed_sets(game) >= 15, 'seed ' + seed);
+    assert.equal(
+      Encircling.play_drawing(options).bigs.length, game.bigs.length,
+      'a seed reproduces its drawing'
+    );
+  });
+});
+
+test('a good game is kept on its first sheet', function () {
+  var options = {width: 1280, height: 800, scale: 14, seed: 1};
+  assert.ok(completed_sets(play(1, true)) >= 15);
+  assert.equal(Encircling.play_drawing(options).seed, 1);
 });
 
 test('the timeline draws everything once, in a drawable order', function () {

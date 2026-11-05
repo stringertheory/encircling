@@ -30,13 +30,19 @@ recorded membership and the drawing cannot disagree.
     enclosed: 1,
     centered: 0.05
   };
-  var PREFERRED_DIAMETER = [6.6, 7.8]; // centimeters, for packing sets tightly
+  var PREFERRED_DIAMETER = [6.3, 8]; // centimeters, for packing sets tightly
   var START_SPREAD = 0.1; // of the paper, how far from its center play starts
   var MAX_TURNS = 80; // packing players stop here, leaving the outskirts bare
+  var MIN_COMPLETED = 15; // completed sets in a drawing worth keeping
+  var FRESH_SHEETS = 10; // sheets of paper tried for a drawing
   var SITE_SPACING = 4.7; // centimeters between neighboring cells
   var SITES_TRIED = 3; // nearest cells considered around a small circle
-  var SITE_ATTEMPTS = 3; // sizes and wobbles tried on each cell
-  var SITE_WOBBLE = 1.5; // pixels off the grid, as if drawn by hand
+  var SITE_ATTEMPTS = 8; // sizes and wobbles tried on each cell
+  var GRID_WARP = 0.3; // centimeters, how far the honeycomb bends
+  var WARP_WAVES = 4; // waves added together to bend it
+  var WARP_WAVELENGTH = 3; // of the spacing between cells
+  var SITE_WOBBLE = 5; // pixels a set strays from its cell, as if drawn by hand
+  var MEMBER_WOBBLE = 4; // pixels a member strays from its edge
   var MEMBER_DIAMETER = [1, 1.55]; // centimeters, members must fit in overlaps
 
   // small seeded generator, so a drawing can be reproduced from its seed
@@ -425,14 +431,47 @@ recorded membership and the drawing cannot disagree.
     });
   };
 
+  // Bends the honeycomb so it looks drawn by hand. The bend is smooth, so
+  // neighboring cells and the edge between them move together.
+  var warped = function (game, point) {
+    var x = point.x;
+    var y = point.y;
+    game.grid.waves.forEach(function (wave) {
+      var push = wave.size * Math.sin(
+        wave.phase + wave.number * (point.x * wave.cos + point.y * wave.sin)
+      );
+      x += push * wave.push_x;
+      y += push * wave.push_y;
+    });
+    return {x: x, y: y};
+  };
+
+  var create_waves = function (game) {
+    var waves = [];
+    for (var i = 0; i < WARP_WAVES; i++) {
+      var heading = between(game, 0, 2 * Math.PI);
+      var push = between(game, 0, 2 * Math.PI);
+      waves.push({
+        size: GRID_WARP * game.scale / Math.sqrt(2),
+        number: 2 * Math.PI / (WARP_WAVELENGTH * game.grid.spacing),
+        phase: between(game, 0, 2 * Math.PI),
+        cos: Math.cos(heading),
+        sin: Math.sin(heading),
+        push_x: Math.cos(push),
+        push_y: Math.sin(push)
+      });
+    }
+    return waves;
+  };
+
   // the points midway between a cell and its neighbors, where members go
   var edges_of = function (game, site) {
     var half = game.grid.spacing / 2;
     return edge_angles(game, site).map(function (angle) {
-      return {
-        x: site.x + half * Math.cos(angle),
-        y: site.y + half * Math.sin(angle)
-      };
+      return warped(game, {
+        x: site.home.x + half * Math.cos(angle),
+        y: site.home.y + half * Math.sin(angle)
+      });
     });
   };
 
@@ -454,11 +493,14 @@ recorded membership and the drawing cannot disagree.
         [false, true].forEach(function (shifted) {
           var x = i * Math.sqrt(3) * d + j * Math.sqrt(3) * d / 2;
           var y = j * 1.5 * d + (shifted ? d : 0);
-          sites.push({
+          var home = {
             x: game.width / 2 + x * cos - y * sin,
-            y: game.height / 2 + x * sin + y * cos,
-            up: !shifted
-          });
+            y: game.height / 2 + x * sin + y * cos
+          };
+          var site = warped(game, home);
+          site.home = home; // where the cell would be on the flat grid
+          site.up = !shifted;
+          sites.push(site);
         });
       }
     }
@@ -510,8 +552,8 @@ recorded membership and the drawing cannot disagree.
     var edges = edges_of(game, big.site);
     var edge = edges[Math.floor(game.rng() * edges.length)];
     return {
-      x: edge.x + between(game, -SITE_WOBBLE, SITE_WOBBLE),
-      y: edge.y + between(game, -SITE_WOBBLE, SITE_WOBBLE),
+      x: edge.x + between(game, -MEMBER_WOBBLE, MEMBER_WOBBLE),
+      y: edge.y + between(game, -MEMBER_WOBBLE, MEMBER_WOBBLE),
       r: member_radius(game),
       color: color
     };
@@ -656,6 +698,7 @@ recorded membership and the drawing cannot disagree.
       turns: []
     };
     game.grid.angle = between(game, 0, Math.PI / 3);
+    game.grid.waves = create_waves(game);
     game.initial = [];
     for (var color = 0; color < game.players; color++) {
       var x_padding = packs(game) ? game.width * (0.5 - START_SPREAD) :
@@ -685,6 +728,22 @@ recorded membership and the drawing cannot disagree.
         passes += 1;
       }
       color = (color + 1) % game.players;
+    }
+    return game;
+  };
+
+  // Early on, the few circles on the paper can box each other in before
+  // any set is complete, and only completing sets brings new free circles.
+  // Such a game ends within a few turns, so players take a fresh sheet.
+  var play_drawing = function (options) {
+    var game;
+    for (var sheet = 0; sheet < FRESH_SHEETS; sheet++) {
+      game = play(create_game(Object.assign({}, options, {
+        seed: options.seed + sheet
+      })));
+      if (game.bigs.filter(is_completed).length >= MIN_COMPLETED) {
+        break;
+      }
     }
     return game;
   };
@@ -725,7 +784,8 @@ recorded membership and the drawing cannot disagree.
     create_game: create_game,
     timeline: timeline,
     take_turn: take_turn,
-    play: play
+    play: play,
+    play_drawing: play_drawing
   };
 
   if (typeof module !== 'undefined' && module.exports) {

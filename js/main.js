@@ -21,14 +21,13 @@ var seed_in_url = /[?&]seed=(\d+)/.exec(window.location.search);
 var seed = seed_in_url ? Number(seed_in_url[1]) : Date.now();
 var still = /[?&]still\b/.test(window.location.search);
 
-var game = Encircling.create_game({
+var game = Encircling.play_drawing({
   width: view.bounds.width,
   height: view.bounds.height,
   scale: scale,
   seed: seed,
   players: players.length
 });
-Encircling.play(game);
 console.log('seed', seed, 'turns', game.turns.length);
 
 // fills go underneath, so they never cover a line
