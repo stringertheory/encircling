@@ -33,6 +33,9 @@ recorded membership and the drawing cannot disagree.
   var PREFERRED_DIAMETER = [6.3, 8]; // centimeters, for packing sets tightly
   var START_SPREAD = 0.1; // of the paper, how far from its center play starts
   var MAX_TURNS = 80; // packing players stop here, leaving the outskirts bare
+  var PAPER = {width: 29.7, height: 42}; // centimeters, A3 portrait for people
+  var SMALL_DIAMETER = [1, 2]; // centimeters, as the rules give them
+  var BIG_DIAMETER = [5, 10];
   var MIN_COMPLETED = 15; // completed sets in a drawing worth keeping
   var FRESH_SHEETS = 10; // sheets of paper tried for a drawing
   var SITE_SPACING = 4.7; // centimeters between neighboring cells
@@ -76,13 +79,13 @@ recorded membership and the drawing cannot disagree.
     return Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
   };
 
-  // the rules give diameters in centimeters
   var small_radius = function (game) {
-    return between(game, 1, 2) * game.scale / 2;
+    return between(game, SMALL_DIAMETER[0], SMALL_DIAMETER[1]) *
+      game.scale / 2;
   };
 
   var big_radius = function (game) {
-    return between(game, 5, 10) * game.scale / 2;
+    return between(game, BIG_DIAMETER[0], BIG_DIAMETER[1]) * game.scale / 2;
   };
 
   // Each set has three neighbors, so packed sets form a honeycomb. That
@@ -153,33 +156,63 @@ recorded membership and the drawing cannot disagree.
       corner_inside(b, c, a);
   };
 
-  // Can this big circle be drawn? Returns the small circles it would
-  // enclose, or null if it would break a rule.
-  var check_big = function (game, big) {
+  // Why a circle cannot be drawn, in words for the person drawing it.
+  var REASONS = {
+    off_paper: 'It has to fit on the paper.',
+    crosses_small: 'Its line can\'t cross a small circle.',
+    encircles_nothing: 'It has to encircle at least one small circle.',
+    too_many: 'It can encircle at most three small circles.',
+    own_color: 'It can\'t encircle a small circle of its own color.',
+    same_color: 'It can\'t encircle two small circles of the same color.',
+    in_two_sets: 'A small circle can only be in two sets.',
+    nested: 'Sets can\'t be inside each other.',
+    too_close: 'It\'s too close to another set.',
+    one_shared: 'It can only overlap another set around one shared ' +
+      'small circle.',
+    three_sets: 'No spot can be inside three sets.',
+    touches_small: 'Small circles can\'t touch.',
+    crosses_set: 'It can\'t cross the line of a set.'
+  };
+
+  var refuse = function (reason) {
+    return {reason: REASONS[reason] || reason};
+  };
+
+  // Can this big circle be drawn? Returns {enclosed}, the small circles it
+  // would enclose, or {reason} if it would break a rule.
+  var examine_big = function (game, big) {
     if (!on_paper(game, big)) {
-      return null;
+      return refuse('off_paper');
     }
 
     var enclosed = [];
     for (var i = 0; i < game.smalls.length; i++) {
       var relation = small_relation(game.smalls[i], big);
       if (relation === 'crossing') {
-        return null;
+        return refuse('crosses_small');
       }
       if (relation === 'inside') {
         enclosed.push(game.smalls[i]);
       }
     }
-    if (enclosed.length < 1 || enclosed.length > MAX_MEMBERS) {
-      return null;
+    if (enclosed.length < 1) {
+      return refuse('encircles_nothing');
+    }
+    if (enclosed.length > MAX_MEMBERS) {
+      return refuse('too_many');
     }
 
     var colors = {};
     for (var j = 0; j < enclosed.length; j++) {
       var small = enclosed[j];
-      if (small.color === big.color || colors[small.color] ||
-          small.sets.length >= MAX_SETS_PER_SMALL) {
-        return null;
+      if (small.color === big.color) {
+        return refuse('own_color');
+      }
+      if (colors[small.color]) {
+        return refuse('same_color');
+      }
+      if (small.sets.length >= MAX_SETS_PER_SMALL) {
+        return refuse('in_two_sets');
       }
       colors[small.color] = true;
     }
@@ -190,18 +223,18 @@ recorded membership and the drawing cannot disagree.
       var other = game.bigs[k];
       var between_them = big_relation(big, other);
       if (between_them === 'nested') {
-        return null;
+        return refuse('nested');
       }
       if (between_them === 'crossing') {
         // not a rule of the workshop: keeps sets from nearly coinciding
         if (distance(big, other) < MIN_SEPARATION * Math.max(big.r, other.r)) {
-          return null;
+          return refuse('too_close');
         }
         var shared = enclosed.filter(function (member) {
           return member.sets.indexOf(other) !== -1;
         });
         if (shared.length !== 1) {
-          return null;
+          return refuse('one_shared');
         }
         neighbors.push(other);
       }
@@ -212,37 +245,47 @@ recorded membership and the drawing cannot disagree.
       for (var n = m + 1; n < neighbors.length; n++) {
         if (big_relation(neighbors[m], neighbors[n]) === 'crossing' &&
             share_area(big, neighbors[m], neighbors[n])) {
-          return null;
+          return refuse('three_sets');
         }
       }
     }
 
-    return enclosed;
+    return {enclosed: enclosed};
   };
 
-  // Can this small circle be drawn? Returns the big circles it would be
-  // inside, or null if it would break a rule.
-  var check_small = function (game, small) {
+  // the small circles a big circle would enclose, or null if illegal
+  var check_big = function (game, big) {
+    return examine_big(game, big).enclosed || null;
+  };
+
+  // Can this small circle be drawn? Returns {containing}, the big circles
+  // it would be inside, or {reason} if it would break a rule.
+  var examine_small = function (game, small) {
     if (!on_paper(game, small)) {
-      return null;
+      return refuse('off_paper');
     }
     for (var i = 0; i < game.smalls.length; i++) {
       var other = game.smalls[i];
       if (distance(small, other) < small.r + other.r + CLEARANCE) {
-        return null;
+        return refuse('touches_small');
       }
     }
     var containing = [];
     for (var j = 0; j < game.bigs.length; j++) {
       var relation = small_relation(small, game.bigs[j]);
       if (relation === 'crossing') {
-        return null;
+        return refuse('crosses_set');
       }
       if (relation === 'inside') {
         containing.push(game.bigs[j]);
       }
     }
-    return containing;
+    return {containing: containing};
+  };
+
+  // the big circles a small circle would be inside, or null if illegal
+  var check_small = function (game, small) {
+    return examine_small(game, small).containing || null;
   };
 
   var can_join = function (big, color) {
@@ -750,6 +793,232 @@ recorded membership and the drawing cannot disagree.
 
   // Everything drawn, in the order it was drawn: circles, and fills for
   // the sets that were completed.
+  /* Games played by people, one move at a time.
+
+  A move is plain data, so it can be sent, stored, and replayed:
+    {color, kind: 'big' | 'small', x, y, r}  draws a circle
+    {color, kind: 'pass'}                    passes, or gives up a step
+  Each player owes a queue of steps. At the start everyone draws a free
+  small circle. A turn is a big circle, a member for each small circle it
+  encloses, and then, for each set it completes, two more members and a
+  free small circle. Every player passing a big circle in a row ends the
+  game. Nobody can prove a step is impossible, so passing is always
+  allowed: it gives up the turn, or just the step owed. */
+
+  var STEP_WORDS = {
+    big: 'draw a big circle',
+    member: 'draw a member in a set',
+    free: 'draw a small circle outside the sets'
+  };
+
+  var queue_turn = function (game, color) {
+    game.owed = [{color: color, step: 'big'}];
+  };
+
+  // what the game is waiting for: {color, step}, or null when it is over
+  var next_step = function (game) {
+    return game.over ? null : game.owed[0];
+  };
+
+  var start_turn = function (game) {
+    var color = game.turn_color;
+    game.turn = {
+      color: color,
+      big: null,
+      enclosed: 0,
+      members: [],
+      completed: [],
+      bonus_members: [],
+      bonus_free: []
+    };
+    queue_turn(game, color);
+  };
+
+  // After the members, a turn's completed sets earn their bonus steps.
+  var settle = function (game) {
+    while (game.owed.length > 0 && game.owed[0].step === 'judge') {
+      var color = game.owed.shift().color;
+      game.turn.completed = mark_completed(game, color);
+      game.turn.completed.forEach(function () {
+        for (var i = 0; i < BONUS_MEMBERS; i++) {
+          game.owed.push({color: color, step: 'member', bonus: true});
+        }
+        game.owed.push({color: color, step: 'free', bonus: true});
+      });
+    }
+    if (game.owed.length === 0) {
+      if (game.turn && game.turn.big) {
+        game.turns.push(game.turn);
+      }
+      game.turn_color = (game.turn_color + 1) % game.players;
+      start_turn(game);
+    }
+  };
+
+  var size_problem = function (game, circle, diameters, what) {
+    var diameter = 2 * circle.r / game.scale;
+    var slack = 1e-9;
+    if (!(diameter >= diameters[0] - slack &&
+          diameter <= diameters[1] + slack)) {
+      return what + ' circles are ' + diameters[0] + ' to ' + diameters[1] +
+        ' cm across.';
+    }
+    return null;
+  };
+
+  // Is this move allowed now? Returns {ok: true, ...what it would do} or
+  // {ok: false, reason}. Does not change the game.
+  var check_move = function (game, move) {
+    var next = next_step(game);
+    if (!next) {
+      return {ok: false, reason: 'The game is over.'};
+    }
+    if (move.color !== next.color) {
+      return {ok: false, reason: 'It\'s not your turn.'};
+    }
+    if (move.kind === 'pass') {
+      return {ok: true};
+    }
+    var wanted = next.step === 'big' ? 'big' : 'small';
+    if (move.kind !== wanted) {
+      return {ok: false, reason: 'Now ' + STEP_WORDS[next.step] + '.'};
+    }
+    if (!(isFinite(move.x) && isFinite(move.y) && isFinite(move.r))) {
+      return {ok: false, reason: 'That isn\'t a circle.'};
+    }
+    var circle = {x: move.x, y: move.y, r: move.r, color: move.color};
+    var result;
+    if (move.kind === 'big') {
+      var size = size_problem(game, circle, BIG_DIAMETER, 'Big');
+      if (size) {
+        return {ok: false, reason: size};
+      }
+      result = examine_big(game, circle);
+      return result.reason ? {ok: false, reason: result.reason} :
+        {ok: true, enclosed: result.enclosed};
+    }
+    var small_size = size_problem(game, circle, SMALL_DIAMETER, 'Small');
+    if (small_size) {
+      return {ok: false, reason: small_size};
+    }
+    result = examine_small(game, circle);
+    if (result.reason) {
+      return {ok: false, reason: result.reason};
+    }
+    var containing = result.containing;
+    if (next.step === 'free') {
+      return containing.length === 0 ? {ok: true, containing: []} :
+        {ok: false, reason: 'This one goes outside every set.'};
+    }
+    if (containing.length === 0) {
+      return {ok: false, reason: 'A member goes inside a set.'};
+    }
+    if (containing.length > 1) {
+      return {ok: false, reason: 'A new member goes in only one set.'};
+    }
+    var set = containing[0];
+    if (set.color === move.color) {
+      return {ok: false, reason: 'It can\'t go in a set of its own color.'};
+    }
+    if (set.members.length >= MAX_MEMBERS) {
+      return {ok: false, reason: 'That set already has three members.'};
+    }
+    if (!can_join(set, move.color)) {
+      return {ok: false, reason: 'That set already has this color.'};
+    }
+    return {ok: true, containing: containing};
+  };
+
+  // Plays a move if it is allowed. Returns check_move's answer.
+  var apply_move = function (game, move) {
+    var verdict = check_move(game, move);
+    if (!verdict.ok) {
+      return verdict;
+    }
+    var step = game.owed.shift();
+    game.log.push(move);
+    if (move.kind === 'pass') {
+      if (step.step === 'big') {
+        game.passes += 1;
+        if (game.passes >= game.players) {
+          game.over = true;
+          return verdict;
+        }
+      }
+    } else if (move.kind === 'big') {
+      game.passes = 0;
+      var big = add_big(game, {
+        x: move.x, y: move.y, r: move.r, color: move.color
+      }, verdict.enclosed);
+      game.turn.big = big;
+      game.turn.enclosed = big.members.length;
+      big.members.forEach(function () {
+        game.owed.push({color: move.color, step: 'member'});
+      });
+      game.owed.push({color: move.color, step: 'judge'});
+    } else {
+      var small = add_small(game, {
+        x: move.x, y: move.y, r: move.r, color: move.color
+      }, verdict.containing);
+      if (step.step === 'free' && !game.turn) {
+        game.initial.push(small);
+      } else if (step.step === 'free') {
+        game.turn.bonus_free.push(small);
+      } else if (step.bonus) {
+        game.turn.bonus_members.push(small);
+      } else {
+        game.turn.members.push(small);
+      }
+    }
+    if (game.owed.length > 0 && game.owed[0].step !== 'judge') {
+      return verdict;
+    }
+    if (!game.turn) {
+      start_turn(game); // everyone has drawn their first small circle
+      return verdict;
+    }
+    settle(game);
+    return verdict;
+  };
+
+  // A game for people: fixed paper, nothing drawn yet, and every player
+  // owing a free small circle to start.
+  var create_shared_game = function (options) {
+    var scale = options.scale || 14;
+    var game = {
+      width: options.width || PAPER.width * scale,
+      height: options.height || PAPER.height * scale,
+      scale: scale,
+      players: options.players || 4,
+      smalls: [],
+      bigs: [],
+      turns: [],
+      initial: [],
+      log: [],
+      owed: [],
+      passes: 0,
+      over: false,
+      turn: null,
+      turn_color: 0
+    };
+    for (var color = 0; color < game.players; color++) {
+      game.owed.push({color: color, step: 'free'});
+    }
+    return game;
+  };
+
+  // rebuilds a game from its log of moves
+  var replay = function (options, log) {
+    var game = create_shared_game(options);
+    log.forEach(function (move, index) {
+      var verdict = apply_move(game, move);
+      if (!verdict.ok) {
+        throw new Error('move ' + index + ' is not allowed: ' + verdict.reason);
+      }
+    });
+    return game;
+  };
+
   var timeline = function (game) {
     var steps = [];
     var draw = function (circle) {
@@ -783,6 +1052,12 @@ recorded membership and the drawing cannot disagree.
     edges_of: edges_of,
     create_game: create_game,
     timeline: timeline,
+    PAPER: PAPER,
+    create_shared_game: create_shared_game,
+    next_step: next_step,
+    check_move: check_move,
+    apply_move: apply_move,
+    replay: replay,
     take_turn: take_turn,
     play: play,
     play_drawing: play_drawing

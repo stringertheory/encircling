@@ -9,11 +9,16 @@ A generative-art simulation of the Conditional Design "Encircling" workshop
 drawing circles under the workshop's rules. It is a static page using Paper.js, with no
 build step or package manager.
 
+A multiplayer version for phones is planned: people take turns on their own devices, a
+PartyServer room on Cloudflare enforces the rules with the same `game.js`, and everyone sees
+"ghost" circles where others are considering a mark. So far only the engine side exists
+(see "Games played by people" below).
+
 ## Commands
 
 ```sh
 python3 -m http.server 8000                       # then open http://localhost:8000
-node --test test/*.test.js                        # all tests, about 30 seconds
+node --test test/*.test.js                        # all tests, about 35 seconds
 node --test --test-name-pattern="diagram" test/*.test.js   # tests matching a name
 ```
 
@@ -44,7 +49,8 @@ per small circle enclosed, then, for each set completed, draw two more members a
 small circle outside the sets.
 
 **Membership comes from geometry.** `check_big` and `check_small` work out what a proposed
-circle would contain and return `null` if it breaks a rule. Placement proposes random
+circle would contain and return `null` if it breaks a rule. `examine_big` and
+`examine_small` do the same work but say which rule, in words for players (`REASONS`). Placement proposes random
 circles and keeps the legal ones, so "no legal move" means none was found. `sets` on a small
 and `members` on a big record the same links from both sides; change them only through
 `add_small` and `add_big`.
@@ -65,6 +71,17 @@ sets. Measure changes against it, because most of `WEIGHTS` barely moves it: `co
 and the `centered` tie-breaker matter, while `completion` is kept for sensible play. Pass
 `strategy: false` to `create_game` for random, off-grid players, which the tests use as a
 baseline.
+
+**Games played by people are a log of moves.** `create_shared_game` starts an empty game on
+fixed A3 portrait paper, with each player owing a free small circle. `apply_move` plays one
+step at a time and returns `{ok: false, reason}` for anything illegal or out of turn;
+`check_move` asks the same without changing the game, for previews. Moves are plain JSON
+(`{color, kind: 'big' | 'small' | 'pass', x, y, r}`), so the log can be stored and sent, and
+`replay` rebuilds a game from it. The game keeps a queue of owed steps (`owed`) and builds
+the same `turns` and `initial` as a simulated game, so `timeline` and `main.js` work on both.
+Simulated players do not use moves, but a test replays their games move by move, which keeps
+the two paths to the same rules. Only moves check sizes (5-10 and 1-2 cm), because test
+scenes call `check_big` with any size.
 
 **`test/oracle.js` must stay independent of `js/game.js`.** It re-checks finished games from
 positions, sizes, and colors alone, and finds three-way overlaps by brute force. Do not
@@ -87,9 +104,10 @@ Our reading of the diagram: two sets may overlap only around exactly one shared 
 Choices the rules do not cover:
 
 - A player with nothing to encircle passes, rather than drawing an empty big circle.
-- A member with no legal position is skipped.
+- A member with no legal position is skipped. People can give up any owed step by passing,
+  because nothing can prove a step is impossible.
 - The game ends at `MAX_TURNS`, or sooner if every player passes in a row. Random players
-  have no turn limit.
+  and people have no turn limit; only passing a big circle counts toward the end.
 - Packing players only use the honeycomb, so they pass when no cell is legal even if an
   off-grid move exists.
 - Circles stay on the paper, small circles do not touch, and no circle crosses a big
