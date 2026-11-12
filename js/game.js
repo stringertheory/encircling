@@ -1007,6 +1007,68 @@ recorded membership and the drawing cannot disagree.
     return game;
   };
 
+  /* The sets to fill: those already completed, those completed this turn
+  but not yet judged, and, given a legal move, those it would complete.
+  Sets only complete when a big circle gives its enclosed members their
+  second set, so the turn's judge step decides the color. Returns plain
+  circles, {x, y, r, color, cutouts, preview}, where preview marks the
+  ones only the move would fill. Does not change the game. */
+  var fills_of = function (game, move) {
+    var verdict = move && move.kind !== 'pass' ? check_move(game, move) : null;
+    var undo = function () {};
+    if (verdict && verdict.ok && move.kind === 'big') {
+      add_big(game, {x: move.x, y: move.y, r: move.r, color: move.color},
+              verdict.enclosed);
+      undo = function () {
+        game.bigs.pop();
+        verdict.enclosed.forEach(function (small) {
+          small.sets.pop();
+        });
+      };
+    } else if (verdict && verdict.ok) {
+      add_small(game, {x: move.x, y: move.y, r: move.r, color: move.color},
+                verdict.containing);
+      undo = function () {
+        game.smalls.pop();
+        verdict.containing.forEach(function (big) {
+          big.members.pop();
+        });
+      };
+    }
+    var judge = game.owed.filter(function (step) {
+      return step.step === 'judge';
+    })[0];
+    var judge_color = judge ? judge.color : move && move.color;
+    var copy = function (circle) {
+      return {x: circle.x, y: circle.y, r: circle.r};
+    };
+    var fills = [];
+    try {
+      game.bigs.forEach(function (big) {
+        if (big.completed_by === null && !is_complete(big)) {
+          return;
+        }
+        var fill = copy(big);
+        fill.color = big.completed_by !== null ? big.completed_by : judge_color;
+        fill.cutouts = neighbors_of(big).map(copy);
+        fill.preview = false;
+        fills.push(fill);
+      });
+    } finally {
+      undo();
+    }
+    if (verdict && verdict.ok) {
+      var before = fills_of(game, null);
+      fills.forEach(function (fill) {
+        fill.preview = !before.some(function (old) {
+          return old.x === fill.x && old.y === fill.y && old.r === fill.r &&
+            old.cutouts.length === fill.cutouts.length;
+        });
+      });
+    }
+    return fills;
+  };
+
   // rebuilds a game from its log of moves
   var replay = function (options, log) {
     var game = create_shared_game(options);
@@ -1053,10 +1115,12 @@ recorded membership and the drawing cannot disagree.
     create_game: create_game,
     timeline: timeline,
     PAPER: PAPER,
+    DIAMETERS: {big: BIG_DIAMETER, small: SMALL_DIAMETER},
     create_shared_game: create_shared_game,
     next_step: next_step,
     check_move: check_move,
     apply_move: apply_move,
+    fills_of: fills_of,
     replay: replay,
     take_turn: take_turn,
     play: play,

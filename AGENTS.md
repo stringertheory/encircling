@@ -12,12 +12,14 @@ build step or package manager.
 A multiplayer version for phones is planned: people take turns on their own devices, a
 PartyServer room on Cloudflare enforces the rules with the same `game.js`, and everyone sees
 "ghost" circles where others are considering a mark. So far only the engine side exists
-(see "Games played by people" below).
+(see "Games played by people" below), and `play.html`, a prototype where people share one
+phone and hand it round.
 
 ## Commands
 
 ```sh
 python3 -m http.server 8000                       # then open http://localhost:8000
+                                                  # or /play.html to play on one phone
 node --test test/*.test.js                        # all tests, about 35 seconds
 node --test --test-name-pattern="diagram" test/*.test.js   # tests matching a name
 ```
@@ -82,6 +84,17 @@ the same `turns` and `initial` as a simulated game, so `timeline` and `main.js` 
 Simulated players do not use moves, but a test replays their games move by move, which keeps
 the two paths to the same rules. Only moves check sizes (5-10 and 1-2 cm), because test
 scenes call `check_big` with any size.
+
+**`play.html` is a separate page for people, with no Paper.js.** `js/play.js` draws with SVG,
+fills completed sets with masks, and saves `names` and the move log in `localStorage` after
+every move. Fills come from `fills_of`, redrawn with every change to the draft: a set's fill
+is settled as soon as the big circle that completes it is drawn (new members only ever have
+one set, so they cannot complete one), so fills show then, and a legal draft previews the
+fills it would add, drawn lighter. Gesture and view math is in `js/sketch.js`, which runs in Node and is tested:
+dragging out from a point draws a big circle, a tap places a small one, a drag on or near a
+draft moves it relatively (so the finger never hides it), the off-line handle resizes it, and
+two fingers pinch, undoing whatever the first finger had started. Tests do not cover
+`play.js`; drive it in a phone-sized browser with touch emulation.
 
 **`test/oracle.js` must stay independent of `js/game.js`.** It re-checks finished games from
 positions, sizes, and colors alone, and finds three-way overlaps by brute force. Do not

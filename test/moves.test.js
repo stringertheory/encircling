@@ -418,3 +418,56 @@ test('a new member goes in only one set', function () {
                               y: both.y, r: 8}),
                'A new member goes in only one set.');
 });
+
+test('the fills a move would make are the fills it does make', function () {
+  var key = function (fill) {
+    return [fill.x, fill.y, fill.r, fill.color, fill.cutouts.length].join(',');
+  };
+  var keys = function (fills) {
+    return fills.map(key).sort();
+  };
+  var previewed = 0;
+  for (var seed = 1; seed <= 6; seed++) {
+    var sim = Encircling.play(Encircling.create_game({
+      width: PAPER.width, height: PAPER.height, scale: PAPER.scale, seed: seed
+    }));
+    var game = Encircling.create_shared_game(PAPER);
+    moves_of(sim).forEach(function (move) {
+      var before = describe(game);
+      var now = Encircling.fills_of(game, null);
+      var preview = Encircling.fills_of(game, move);
+      assert.deepEqual(describe(game), before, 'the preview changed the game');
+      assert.ok(now.every(function (fill) {
+        return !fill.preview;
+      }));
+      var fresh = preview.filter(function (fill) {
+        return fill.preview;
+      });
+      previewed += fresh.length;
+      assert.equal(fresh.length, preview.length - now.length);
+      assert.ok(Encircling.apply_move(game, move).ok);
+      assert.deepEqual(keys(Encircling.fills_of(game, null)), keys(preview),
+                       'seed ' + seed);
+      var judged = game.owed.every(function (step) {
+        return step.step !== 'judge';
+      });
+      if (judged) {
+        var completed = game.bigs.filter(function (big) {
+          return big.completed_by !== null;
+        });
+        assert.deepEqual(keys(Encircling.fills_of(game, null)), keys(
+          completed.map(function (big) {
+            return {x: big.x, y: big.y, r: big.r, color: big.completed_by,
+                    cutouts: Encircling.neighbors_of(big)};
+          })), 'seed ' + seed);
+      }
+    });
+  }
+  assert.ok(previewed > 20, 'only ' + previewed + ' fills were previewed');
+});
+
+test('an illegal move previews no fills', function () {
+  var game = Encircling.create_shared_game(PAPER);
+  assert.deepEqual(Encircling.fills_of(game, {color: GREEN, kind: 'small',
+                                              x: 100, y: 100, r: 9}), []);
+});
