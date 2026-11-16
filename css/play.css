@@ -45,6 +45,41 @@ html, body {
   stroke-width: 1.5px;
 }
 
+#ghosts circle {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+  stroke-width: 2.5px;
+}
+
+/* whoever's turn it is: bold, but not to be mistaken for ink */
+#ghosts .active {
+  opacity: 0.75;
+}
+
+/* someone sketching out of turn, or watching */
+#ghosts .faint {
+  stroke-width: 1.5px;
+  stroke-dasharray: 3 4;
+  opacity: 0.55;
+}
+
+#ghosts text {
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+  vector-effect: non-scaling-stroke;
+}
+
+#ghosts text.faint {
+  stroke-dasharray: none;
+  opacity: 0.7;
+}
+
+#draft .sketch {
+  opacity: 0.6;
+}
+
 #draft .illegal {
   stroke-dasharray: 6 5;
 }
@@ -229,4 +264,81 @@ form button[type=submit], .card button {
 #handoff-dot {
   width: 44px;
   height: 44px;
+}
+
+#go-online {
+  margin-top: 10px;
+}
+
+form button[type=submit], #begin {
+  background: #222;
+  border-color: #222;
+  color: #fff;
+  font-weight: 600;
+}
+
+#begin:disabled {
+  background: #888;
+  border-color: #888;
+}
+
+#name-field .label {
+  width: auto;
+  height: auto;
+  border-radius: 0;
+}
+
+.seat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  border-top: 1px solid #ddd8cd;
+}
+
+.seat .dot {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+
+.seat .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seat .open {
+  color: #888;
+}
+
+.seat .away {
+  color: #888;
+  font-size: 13px;
+}
+
+.seat button {
+  min-height: 40px;
+  padding: 6px 14px;
+}
+
+.card .seat button {
+  width: auto;
+  margin: 0;
+}
+
+#link-state {
+  flex: none;
+  font-size: 13px;
+  color: #fff;
+  background: #a33;
+  border-radius: 10px;
+  padding: 3px 8px;
+}
+
+#link-state[hidden] {
+  display: none;
 }

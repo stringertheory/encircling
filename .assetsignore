@@ -1,0 +1,8 @@
+.*
+node_modules
+server
+test
+package.json
+package-lock.json
+wrangler.jsonc
+*.md

@@ -15,6 +15,7 @@
         <rect id="paper" x="0" y="0"></rect>
         <g id="fills"></g>
         <g id="lines"></g>
+        <g id="ghosts"></g>
         <g id="draft"></g>
       </g>
     </svg>
@@ -25,6 +26,7 @@
         <div id="who"></div>
         <div id="what"></div>
       </div>
+      <span id="link-state" hidden>Offline</span>
       <button id="menu" type="button" aria-label="New game">New</button>
     </header>
 
@@ -43,10 +45,27 @@
         <p>Name the player for each color. If there are fewer than four of you,
           give someone two colors by typing their name twice.</p>
         <div id="name-fields"></div>
-        <button type="submit">Start</button>
+        <button type="submit">Start on this phone</button>
+        <button id="go-online" type="button">Play on separate phones</button>
         <p class="small">Draw a big circle by dragging out from its center. Drag a circle
           to move it, or its handle to resize it. Pinch to zoom.</p>
       </form>
+    </section>
+
+    <section id="lobby" class="overlay" hidden>
+      <div class="card">
+        <h1>Encircling</h1>
+        <p id="lobby-status">Connecting…</p>
+        <label class="field" id="name-field">
+          <span class="label">Your name</span>
+          <input id="my-name" maxlength="24" autocomplete="off">
+        </label>
+        <div id="seat-list"></div>
+        <p class="small">Take two colors if there are fewer than four of you.
+          Everyone opens the same link on their own phone.</p>
+        <button id="share" type="button">Share the link</button>
+        <button id="begin" type="button" class="primary" disabled>Start</button>
+      </div>
     </section>
 
     <section id="handoff" class="overlay" hidden>

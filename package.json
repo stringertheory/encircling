@@ -1,0 +1,16 @@
+{
+  "name": "encircling",
+  "private": true,
+  "description": "Conditional Design's Encircling workshop, simulated and played online",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "dev": "wrangler dev --ip 0.0.0.0",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "partyserver": "^0.5.10"
+  },
+  "devDependencies": {
+    "wrangler": "^4.160.1"
+  }
+}

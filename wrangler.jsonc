@@ -1,0 +1,12 @@
+// The Worker that serves the pages and runs online games: see server/index.js.
+{
+  "name": "encircling",
+  "main": "server/index.js",
+  "compatibility_date": "2026-11-01",
+  // the static pages, minus what .assetsignore leaves out
+  "assets": {"directory": "."},
+  "durable_objects": {
+    "bindings": [{"name": "Game", "class_name": "Game"}]
+  },
+  "migrations": [{"tag": "v1", "new_sqlite_classes": ["Game"]}]
+}

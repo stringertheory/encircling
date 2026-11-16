@@ -7,19 +7,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A generative-art simulation of the Conditional Design "Encircling" workshop
 (http://www.conditionaldesign.org/workshops/encircling/). Four simulated players take turns
 drawing circles under the workshop's rules. It is a static page using Paper.js, with no
-build step or package manager.
+build step. npm is only for the online game's server (`partyserver` and `wrangler`).
 
-A multiplayer version for phones is planned: people take turns on their own devices, a
-PartyServer room on Cloudflare enforces the rules with the same `game.js`, and everyone sees
-"ghost" circles where others are considering a mark. So far only the engine side exists
-(see "Games played by people" below), and `play.html`, a prototype where people share one
-phone and hand it round.
+`play.html` lets people play: on one phone passed round, or online, each on their own
+phone, in a PartyServer room on Cloudflare that enforces the rules with the same `game.js`,
+where everyone sees "ghost" circles showing where others are considering a mark.
 
 ## Commands
 
 ```sh
 python3 -m http.server 8000                       # then open http://localhost:8000
                                                   # or /play.html to play on one phone
+npm install && npm run dev                        # pages and online games, on
+                                                  # http://localhost:8787 and the LAN
+npm run deploy                                    # to Cloudflare (needs wrangler login)
 node --test test/*.test.js                        # all tests, about 35 seconds
 node --test --test-name-pattern="diagram" test/*.test.js   # tests matching a name
 ```
@@ -94,7 +95,32 @@ fills it would add, drawn lighter. Gesture and view math is in `js/sketch.js`, w
 dragging out from a point draws a big circle, a tap places a small one, a drag on or near a
 draft moves it relatively (so the finger never hides it), the off-line handle resizes it, and
 two fingers pinch, undoing whatever the first finger had started. Tests do not cover
-`play.js`; drive it in a phone-sized browser with touch emulation.
+`play.js`; drive it in a phone-sized browser with touch emulation, and for online play use
+two browser profiles, since a profile is one player.
+
+**Online, the room's log is the game.** `play.html?game=<id>` connects to
+`/parties/game/<id>`. `server/room.js` is plain CommonJS over plain data, tested in Node:
+seats (claimed before the start, one name per phone), starting once all four colors are
+taken, and moves, which it checks with `apply_move` before they are stored and sent to
+everyone; phones apply only what the room sends. A move carries `at`, the log length it was
+made against, so a move that crossed someone else's is refused. `server/index.js` is a thin
+PartyServer wrapper: it stores each move under its own key, so a game outlives every phone
+disconnecting and can run over days. People are browser tokens in `localStorage`, checked
+before the connection opens and never sent to other phones. Anyone playing can skip a color
+whose phone isn't here: phones close their connection when hidden and say `here` every 20
+seconds, because a phone that loses signal closes nothing, so the room counts anyone silent
+for 45 seconds as gone, and an alarm closes such connections. Wrangler serves the repo root
+as static assets, minus `.assetsignore`, and redirects `play.html` to `play`.
+
+**Ghosts are drafts, relayed and never stored.** A phone sends its draft as `ghost` at most
+every 50 ms, always ending with the latest, and `null` once it is drawn or cleared. The room
+relays it to everyone else with the sender's colors (`ghost_of` keeps only a sane circle;
+the rules are not checked) and keeps each connection's latest in its connection state, so a
+phone that joins sees what is showing; a gone connection's ghost is cleared. Receiving
+phones ease each ghost toward its latest position, bold if its colors include whoever's turn
+it is, faint and dashed otherwise, with the person's name. Online, anyone may sketch out of
+turn, to signal plans: a sketch is always a big circle, `Draw it` becomes `Clear`, and it
+carries over as the draft if the turn that comes wants a big circle.
 
 **`test/oracle.js` must stay independent of `js/game.js`.** It re-checks finished games from
 positions, sizes, and colors alone, and finds three-way overlaps by brute force. Do not
@@ -126,6 +152,11 @@ Choices the rules do not cover:
 - Circles stay on the paper, small circles do not touch, and no circle crosses a big
   circle's line unless it is a big circle overlapping around a shared member.
 - `MIN_SEPARATION` stops crossing sets from nearly coinciding. This is for appearance only.
+
+## Conventions
+
+- Use American English everywhere: code, comments, docs, and text players see (color,
+  gray, center).
 
 ## Known gaps
 
